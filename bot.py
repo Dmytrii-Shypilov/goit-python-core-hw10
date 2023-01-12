@@ -3,58 +3,50 @@ import sys
 
 from collections import UserDict
 
-'''
-Класс AddressBook, который наследуется от UserDict, и мы потом добавим логику поиска по записям в этот класс.
-Класс Record, который отвечает за логику добавления/удаления/редактирования необязательных полей и хранения обязательного поля Name.
-Класс Field, который будет родительским для всех полей, в нем потом реализуем логику общую для всех полей.
-Класс Name, обязательное поле с именем.
-Класс Phone, необязательное поле с телефоном и таких одна запись (Record) может содержать несколько.
-Критерии приёма
-Реализованы все классы из задания.
-- Записи Record в AddressBook хранятся как значения в словаре. В качестве ключей используется значение Record.name.value.
-- Record хранит объект Name в отдельном атрибуте.
-- Record хранит список объектов Phone в отдельном атрибуте.
-- Record реализует методы для добавления/удаления/редактирования объектов Phone.
-- AddressBook реализует метод add_record, который добавляет Record в self.data.
-'''
-
-
 
 class AddressBook(UserDict):
-    def search_for_contact(self, name):
-        contact = self.data.get(name.title(), "Not found")
-        return f"{' '.join(contact.get_phone())}"
+    def search_for_record(self, name):
+        contact = self.data.get(name.title(), None)
+        return contact
 
     def add_record(self, contact):
         self.data.update({contact.name.value: contact})
         return (
-        f"Assistant: New contact {contact.name.value} with number {contact.get_phone()} has been successfully added")
+            f"Assistant: New contact {contact.name.value} has been successfully added")
 
-    def delete_contact(self, name):
-        deleted = self.date.pop(name)
-        if deleted:
-            return f"Contact {name} was succesfully deleted"
-        else:
-            return f"Contact with {name} was not found"
+    def delete_record(self, name):
+        deleted = self.data.pop(name.title())
+        return deleted
+
     def show_all(self):
-        return f"{self.data}"
+        return self.data
+
 
 class Record:
-    def __init__(self, name, phone = ''):
+    def __init__(self, name, phone=''):
         self.name = name
-        self.phone_numbers = [phone]
-   
+        if phone == '':
+            self.phone_numbers = []
+        else:
+            self.phone_numbers = [phone]
+
     def add_phone(self, phone):
         self.phone_numbers.append(phone)
-    def edit_phone(self, phone):
-        phone.value = phone
+
+    def edit_phone(self, phone_to_change, value):
+        phone_to_edit = list(
+            filter(lambda x: x.value == phone_to_change, self.phone_numbers))[0]
+        phone_to_edit.value = value
+
     def delete_phone(self, phone):
-        idx = self.phone_numbers.index(phone)
+        to_delete = list(filter(lambda x: x.value ==
+                         phone, self.phone_numbers))[0]
+        idx = self.phone_numbers.index(to_delete)
         self.phone_numbers.pop(idx)
+
     def get_phone(self):
         phones_list = map(lambda x: x.value, self.phone_numbers)
         return f"{' '.join(phones_list)}"
-
 
 
 class Field:
@@ -62,35 +54,19 @@ class Field:
 
 
 class Name(Field):
-    def __init__ (self, value):
+    def __init__(self, value):
         self.value = value.title()
 
+
 class Phone(Field):
-    def __init__ (self, value):
+    def __init__(self, value):
         self.value = value
-
-
-
-
-# name = Name("Dima")
-# phone = Phone('+33333')
-
-# record = Record(name, phone)
-
-# addres_book = AddressBook()
-
-# addres_book.add_record(record)
-
-# print(addres_book.data["Dima"].name.value)
-# print(addres_book.data["Dima"].phone_numbers[0].value)
-
-
 
 
 phone_book = AddressBook()
 
 COMMANDS = ['show all', 'good bye', 'hello',
-            'exit', 'close', 'add', 'change', 'phone']
+            'exit', 'close', 'add', 'change', 'phone', 'new phone', 'delete contact', 'delete phone']
 
 DATA_FORMATS = {
     'phone': '^[+][0-9]{12}$'
@@ -104,10 +80,9 @@ def input_error(func):
         try:
             result = func(args)
             return result
-        except KeyError:
-            print("Assistant: Please, type a name in order to find a number")
         except IndexError:
-            print("Assistant: Please, type name and number")
+            print(
+                "Assistant: Please, type name and number (two numbers if you use 'change' command)")
         except ValueError as err:
             print(err.args[0])
             return None
@@ -122,12 +97,15 @@ def check_number_validity(number):
 
 
 def if_contact_exists(name):
-    exists = None
+    contact = phone_book.search_for_record(name)
+    return contact
 
-    for person in phone_book:
-        if person["name"] == name.title():
-            exists = person
-    return exists
+
+def if_phone_exists(name, phone):
+    contact = phone_book.search_for_record(name)
+    if_exists = bool(
+        len(list(filter(lambda x: x.value == phone, contact.phone_numbers))))
+    return if_exists
 
 
 @input_error
@@ -150,62 +128,117 @@ def greet():
 
 
 def show_all_contacts():
-    for contact in phone_book:
-        return (f"Assistant: Here are all your contacts:\n\t{contact['name']}: {contact['number']}")
+    contacts_list = []
+    contacts = phone_book.show_all()
+    for contact, data in contacts.items():
+        if not len(data.phone_numbers):
+            contacts_list.append(f"\t{contact}: No numbers added yet\n")
+        else:
+            contacts_list.append(f"\t{contact}: {data.get_phone()}\n")
+    return "\n" + " ".join(contacts_list)
 
 
 @input_error
 def add_contact(args):
-    person_data = args[1]
-    check_number_validity(person_data[1])
-    contact = if_contact_exists(person_data[0])
+    if len(args) > 1:
+        name, phone = args[0], args[1]
+        check_number_validity(phone)
+        new_record = Record(Name(name), Phone(phone))
+    else:
+        name = args[0]
+        new_record = Record(Name(name))
+
+    contact = if_contact_exists(name)
 
     if contact:
         return ("Assistant: contact with such name alreday exists")
 
-    new_person = {'name': person_data[0].title(), 'number': person_data[1]}
-    phone_book.append(new_person)
-    return (
-        f"Assistant: New contact {person_data[0].title()} with number {person_data[1]} has been successfully added")
+    message = phone_book.add_record(new_record)
+
+    return (f"{message}")
 
 
 @input_error
 def get_number(args):
-    found_person = {}
+    name = args[0]
+    if not name:
+        raise ValueError(
+            "Assistant: Please, type a name in order to find a number")
+    contact = phone_book.search_for_record(name)
 
-    for person in phone_book:
-        if person["name"] == args[1][0].title():
-            found_person = person
-            return (f"Assistant: {found_person['number']}")
-
-    if found_person == {}:
+    if not contact:
         return ("Assistant: Person with such name was not found")
+    phone_numbers = contact.get_phone()
+
+    return f"\n\t{phone_numbers}\n"
 
 
 @input_error
 def change_number(args):
-    contact = if_contact_exists(args[1][0])
-
+    name, old_number, new_number = args[0], args[1], args[2]
+    contact = if_contact_exists(name)
     if not contact:
         return ("Assistant: Person with such name was not found")
 
-    check_number_validity(args[1][1])
-    contact["number"] = args[1][1]
+    phone_exists = if_phone_exists(name, old_number)
+    if not phone_exists:
+        return f"Assistant: Such number {old_number} doesn't exist in {name}'s phone list"
+
+    check_number_validity(new_number)
+    contact.edit_phone(old_number, new_number)
+
     return (
-        f"Assistant: {contact['name']}'s number was successfully changed to {contact['number']}.")
+        f"Assistant: {name.title()}'s number {old_number} was successfully changed to {new_number}.")
+
+
+@input_error
+def add_number(args):
+    name, new_number = args[0], args[1]
+    check_number_validity(new_number)
+    contact = if_contact_exists(name)
+    if not contact:
+        return ("Assistant: Person with such name was not found")
+    phone = Phone(new_number)
+    contact.add_phone(phone)
+    return f"Assistant: New number {new_number} was added to {name.title()}'s phone numbers list"
+
+
+@input_error
+def delete_contact(args):
+    name = args[0].title()
+    contact = if_contact_exists(name)
+    if contact:
+        phone_book.delete_record(name)
+        return f"Assistant: Contact {name} was succesfully deleted"
+    else:
+        return f"Assistant: Contact with {name} was not found"
+
+
+@input_error
+def delete_number(args):
+    name, phone = args[0], args[1]
+    contact = if_contact_exists(name)
+    if not contact:
+        return ("Assistant: Person with such name was not found")
+
+    phone_exists = if_phone_exists(name, phone)
+    if not phone_exists:
+        return f"Assistant: Such number {phone} doesn't exist in {name}'s phone list"
+
+    contact.delete_phone(phone)
+    return (f"Assistant: Number {phone} was deleted from {name.title()}'s phone list")
 
 
 def terminate_assistant():
     global chat_in_progress
     chat_in_progress = False
-    return('Assistant: Bye. See you later ;)')
+    return ('Assistant: Bye. See you later ;)')
 
 
 def main():
     message = input("You: ")
     command_args = get_instruction(message)
     bot_message = None
-
 
     if not command_args:
         return
@@ -216,25 +249,26 @@ def main():
         case 'hello':
             bot_message = greet()
         case "show all":
-            bot_message = phone_book.show_all()
+            bot_message = show_all_contacts()
         case "phone":
-            [name] = args
-            bot_message = phone_book.search_for_contact(name)
+            bot_message = get_number(args)
         case 'add':
-            [name, phone ] = args
-            new_record = Record(Name(name), Phone(phone))
-            bot_message = phone_book.add_record(new_record)
+            bot_message = add_contact(args)
         case 'change':
-            bot_message = change_number(command_args)
+            bot_message = change_number(args)
+        case 'new phone':
+            bot_message = add_number(args)
+        case 'delete contact':
+            bot_message = delete_contact(args)
+        case "delete phone":
+            bot_message = delete_number(args)
 
     if bot_message:
         print(bot_message)
 
     if command in ['close', 'exit', 'good bye']:
-       bot_message = terminate_assistant()
-       print(bot_message)
-
-
+        bot_message = terminate_assistant()
+        print(bot_message)
 
 
 while chat_in_progress:
